@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow,noarchive">
+<meta name="referrer" content="no-referrer">
 <title>短链管理台</title>
 <style>
 :root{--bg:#0e1116;--card:#161a21;--line:#242a34;--fg:#e9ecf2;--muted:#98a2b3;--accent:#4d9dff;--ok:#3ecf8e;--bad:#f09595;}
@@ -22,11 +23,15 @@ input:focus,select:focus{outline:none;border-color:var(--accent)}
 .grid .full{grid-column:1/-1}
 @media(max-width:640px){.grid{grid-template-columns:1fr}}
 button{font-family:inherit;font-size:13px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);padding:8px 15px;cursor:pointer}
-button:hover{border-color:var(--accent)}
+button:hover:not(:disabled){border-color:var(--accent)}
+button:disabled{opacity:.45;cursor:default}
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 button.primary:hover{opacity:.9}
 button.mini{padding:4px 10px;font-size:12px}
 .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.bar{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin-bottom:12px}
+.bar .search{display:flex;gap:8px;align-items:center}
+.bar .search input{width:220px}
 .tablewrap{overflow-x:auto}
 table{width:100%;border-collapse:collapse;font-size:13px;min-width:820px}
 th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
@@ -88,6 +93,18 @@ td code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px}
 
   <div class="card">
     <h2>已生成的短链</h2>
+    <div class="bar">
+      <div class="search">
+        <input id="f-search" placeholder="搜索短码 / 标题 / 视频地址">
+        <button class="mini" id="btn-search">搜索</button>
+        <button class="mini" id="btn-clear">清空</button>
+      </div>
+      <div class="search">
+        <button class="mini" id="btn-prev">上一页</button>
+        <span id="pageInfo" style="color:var(--muted);font-size:12.5px">—</span>
+        <button class="mini" id="btn-next">下一页</button>
+      </div>
+    </div>
     <div class="tablewrap">
       <table>
         <thead>
@@ -103,39 +120,76 @@ td code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px}
 </div>
 <script>
 (function () {
-  var key = new URLSearchParams(location.search).get('key') || '';
   var msg = document.getElementById('msg');
   var rows = document.getElementById('rows');
+  var baseSub = document.getElementById('baseSub');
+  var pageInfo = document.getElementById('pageInfo');
+  var btnPrev = document.getElementById('btn-prev');
+  var btnNext = document.getElementById('btn-next');
+  var PAGE = 50;
+
+  // 分页状态。服务端默认只回 200 条，这里按 50 条一页翻。
+  var state = { offset: 0, limit: PAGE, q: '', total: 0, publicBaseUrl: '' };
 
   function say(text, ok) {
     msg.textContent = text || '';
     msg.className = 'msg ' + (ok ? 'ok' : 'bad');
   }
-  function api(method, path, body) {
-    return fetch(path + (path.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(key), {
-      method: method,
-      headers: { 'Content-Type': 'application/json' },
-      body: body ? JSON.stringify(body) : undefined
-    }).then(function (r) {
-      return r.json().then(function (j) {
-        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
-        return j;
-      });
-    });
-  }
+
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
 
+  // 密钥不再拼进 URL：进来时服务端已用 ?key= 换成了 HttpOnly cookie
+  function api(method, path, body) {
+    return fetch(path, {
+      method: method,
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: body ? JSON.stringify(body) : undefined
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (!r.ok) {
+          var e = new Error(j.error || ('HTTP ' + r.status));
+          e.status = r.status;
+          throw e;
+        }
+        return j;
+      });
+    });
+  }
+
+  function renderPager() {
+    var from = state.total ? state.offset + 1 : 0;
+    var to = Math.min(state.offset + state.limit, state.total);
+    var page = Math.floor(state.offset / state.limit) + 1;
+    var pages = Math.max(1, Math.ceil(state.total / state.limit));
+    pageInfo.textContent = state.total
+      ? '第 ' + page + '/' + pages + ' 页　' + from + '-' + to + ' 共 ' + state.total + ' 条'
+      : '共 0 条';
+    btnPrev.disabled = state.offset <= 0;
+    btnNext.disabled = state.offset + state.limit >= state.total;
+  }
+
   function load() {
-    api('GET', '/api/links').then(function (j) {
-      document.getElementById('baseSub').textContent = '公网前缀：' + j.publicBaseUrl + '　共 ' + j.list.length + ' 条';
+    var path = '/api/links?limit=' + state.limit + '&offset=' + state.offset +
+      (state.q ? '&q=' + encodeURIComponent(state.q) : '');
+
+    api('GET', path).then(function (j) {
+      state.total = j.total;
+      state.publicBaseUrl = j.publicBaseUrl;
+      baseSub.textContent = '公网前缀：' + j.publicBaseUrl + '　共 ' + j.total + ' 条';
+      renderPager();
+
       if (!j.list.length) {
-        rows.innerHTML = '<tr><td colspan="7" class="empty">还没有短链，上面新建一条吧</td></tr>';
+        rows.innerHTML = '<tr><td colspan="7" class="empty">' +
+          (state.q ? '没有匹配「' + esc(state.q) + '」的短链' : '还没有短链，上面新建一条吧') +
+          '</td></tr>';
         return;
       }
+
       rows.innerHTML = j.list.map(function (l) {
         var share = j.publicBaseUrl + '/v/' + l.code;
         return '<tr>' +
@@ -152,6 +206,7 @@ td code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px}
           '</div></td>' +
         '</tr>';
       }).join('');
+
       rows.querySelectorAll('[data-copy]').forEach(function (b) {
         b.onclick = function () {
           var t = b.getAttribute('data-copy');
@@ -178,11 +233,34 @@ td code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px}
         };
       });
     }).catch(function (e) {
+      renderPager();
+      if (e.status === 401 || e.status === 503) {
+        rows.innerHTML = '<tr><td colspan="7" class="empty">' +
+          '会话已过期或未登录，请用 /admin?key=你的管理密钥 重新打开</td></tr>';
+        return;
+      }
       rows.innerHTML = '<tr><td colspan="7" class="empty">加载失败：' + esc(e.message) + '</td></tr>';
     });
   }
 
+  function search() {
+    state.q = document.getElementById('f-search').value.trim();
+    state.offset = 0;
+    load();
+  }
+
   document.getElementById('btn-reload').onclick = load;
+  document.getElementById('btn-search').onclick = search;
+  document.getElementById('btn-clear').onclick = function () {
+    document.getElementById('f-search').value = '';
+    search();
+  };
+  document.getElementById('f-search').onkeydown = function (e) {
+    if (e.key === 'Enter') search();
+  };
+  btnPrev.onclick = function () { state.offset = Math.max(0, state.offset - state.limit); load(); };
+  btnNext.onclick = function () { state.offset += state.limit; load(); };
+
   document.getElementById('btn-add').onclick = function () {
     var body = {
       title: document.getElementById('f-title').value.trim(),
@@ -197,15 +275,11 @@ td code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px}
       ['f-title', 'f-desc', 'f-video', 'f-cover', 'f-code'].forEach(function (id) {
         document.getElementById(id).value = '';
       });
+      state.offset = 0;
       load();
     }).catch(function (e) { say(e.message, false); });
   };
 
-  if (!key) {
-    rows.innerHTML = '<tr><td colspan="7" class="empty">缺少管理密钥，请用 /admin?key=你的密钥 访问</td></tr>';
-    say('需要在网址后面带上 ?key=你的管理密钥', false);
-    return;
-  }
   load();
 })();
 </script>

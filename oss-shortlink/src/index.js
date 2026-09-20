@@ -23,6 +23,7 @@ const configLib = require('./config');
 const codesLib = require('./codes');
 const ossLib = require('./oss');
 const linksLib = require('./links');
+const countersLib = require('./counters');
 const renderLib = require('./render');
 const routerLib = require('./router');
 
@@ -37,12 +38,24 @@ module.exports = {
   fileStore: storeLib.fileStore,
   customStore: storeLib.customStore,
   normalizeDb: storeLib.normalizeDb,
+  DB_VERSION: storeLib.DB_VERSION,
+
+  // 计数器后端：想自己接 Redis / MySQL 时可以用这两个做参考实现
+  counters: {
+    create: countersLib.createCounters,
+    memoryBackend: storeLib.memoryCounterBackend,
+    fileBackend: storeLib.fileCounterBackend,
+    isBackend: storeLib.isCounterBackend
+  },
 
   // 辅助能力，按需单独调用
   config: {
     normalize: configLib.normalize,
+    loadFromFile: configLib.loadFromFile,
     loadFromDisk: configLib.loadFromDisk,
     applyEnv: configLib.applyEnv,
+    normalizeStreamMode: configLib.normalizeStreamMode,
+    isValidStreamMode: configLib.isValidStreamMode,
     hasUsableAdminKey: configLib.hasUsableAdminKey
   },
   codes: {

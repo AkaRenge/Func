@@ -1,6 +1,6 @@
 {
   "name": "oss-shortlink",
-  "version": "1.0.1",
+  "version": "1.2.0",
   "description": "把对象存储上的视频包成短链 + 同域 H5 播放页，扫码者全程只看到你自己的域名",
   "keywords": [
     "oss",
@@ -45,6 +45,7 @@
     "views/",
     "bin/",
     "examples/",
+    "test/",
     "config.example.json",
     "index.d.ts",
     "README.md",

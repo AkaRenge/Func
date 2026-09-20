@@ -73,7 +73,8 @@ app.listen(3000);
 ### 先跑一下 demo 看效果
 
 ```bash
-git clone <本仓库> && cd oss-shortlink
+git clone https://github.com/AkaRenge/Func.git
+cd Func/oss-shortlink        # 本包位于仓库的 oss-shortlink/ 子目录
 node examples/minimal-demo.js
 ```
 
@@ -93,9 +94,16 @@ demo 用内存存储起一个真实服务，自动跑一轮验证，然后把播
 ### 作为独立服务部署
 
 ```bash
-cp config.example.json config.json   # 改 publicBaseUrl、adminKey、brand
-npm start                            # 等价于 node bin/cli.js
+oss-shortlink init                   # 生成 config.json，adminKey 已随机填好
+# 改 publicBaseUrl、brand
+oss-shortlink                        # 启动
 ```
+
+`init` 只是把随包的 `config.example.json` 复制到你当前目录并换上一个随机密钥，
+不想用它也可以自己 `cp config.example.json config.json`。
+
+配置和数据默认都相对**当前工作目录**：`./config.json` 与 `./data/links.json`，
+可以用 `--config` / `--data`（或 `CONFIG_FILE` / `DATA_FILE`）改到别处。
 
 ---
 
@@ -120,7 +128,11 @@ npm start                            # 等价于 node bin/cli.js
 | `viewDir` | string | 内置 `views/` | 替换整套模板目录 |
 | `templates` | object | — | 只覆盖个别模板，如 `{'player.html': '...'}` |
 | `logRequests` | boolean | `true` | 是否打印访问日志 |
-| `flushIntervalMs` | number | `5000` | 落盘间隔，0 表示不定时落盘 |
+| `flushIntervalMs` | number | `5000` | **定义**的落盘间隔，0 表示不定时落盘 |
+| `trackHits` | boolean | `true` | 是否记录扫码量。设 false 则完全不写计数 |
+| `hitAppendIntervalMs` | number | `1000` | 计数增量多久追加一次日志，0 = 每次命中立刻写 |
+| `hitCompactIntervalMs` | number | `300000` | 计数多久压实一次快照，0 = 只在 close 时压实 |
+| `hitJournalMaxBytes` | number | `4 MB` | 日志超过它就提前压实，0 = 不限制 |
 | `log` | function | console.log | 自定义日志 |
 | `now` | function | Date.now | 时间源，便于测试 |
 
@@ -130,13 +142,14 @@ npm start                            # 等价于 node bin/cli.js
 |---|---|
 | `app.config` | 规整后的配置（已补默认值、已校正类型） |
 | `app.links` | 短链管理器 |
+| `app.counters` | 访问计数管理器（诊断用：`mode` / `tracked` / `pending` / `journalBytes`） |
 | `app.handler(req, res)` | 请求处理器，可挂到任意 Node HTTP 服务 |
 | `app.listen(port?, host?)` | 起服务，返回原生 `http.Server` |
 | `app.attach(server)` | 接管已有 server 的请求 |
-| `app.snapshot()` | 数据深拷贝，用于断言或备份 |
-| `app.stats()` | 记录数、取流模式、签名状态、存储类型 |
-| `app.save()` | 立即落盘 |
-| `app.close()` | 停定时器、关服务、落盘。可重复调用 |
+| `app.snapshot()` | 数据深拷贝（links 带回 hits），用于断言或备份 |
+| `app.stats()` | 记录数、取流模式、签名状态、存储类型、计数状态 |
+| `app.save()` | 定义与计数一起立即落盘 |
+| `app.close()` | 停定时器、关服务、把定义和计数都落干净。可重复调用 |
 
 ### `app.links`
 
@@ -150,9 +163,47 @@ app.links.has(code)               // → boolean
 app.links.update(code, patch)     // → LinkRecord
 app.links.remove(code)            // → boolean，重复删除返回 false 不报错
 app.links.list()                  // → LinkRecord[]，按创建时间倒序
+app.links.count()                 // → number，O(1)，健康检查用这个
+app.links.page({limit, offset, q})// → { total, offset, limit, list }
 app.links.touch(code)             // 记一次访问，返回 LinkRecord | null
 app.links.shareUrl(code)          // → string
 ```
+
+### 管理 API
+
+```
+GET    /api/links?limit=&offset=&q=   列表（分页 + 搜索）
+POST   /api/links                     新建
+GET    /api/links/:code               单条
+PATCH  /api/links/:code               局部更新（PUT 等价）
+DELETE /api/links/:code               删除
+GET    /admin                         管理台页面
+```
+
+鉴权三种方式，任选其一：
+
+| 方式 | 用法 | 说明 |
+|---|---|---|
+| 会话 cookie | 浏览器打开 `/admin?key=密钥` | 服务端换成 HttpOnly cookie 并 302 到 `/admin`，密钥不再留在地址栏、历史和下游日志里 |
+| 请求头 | `X-Admin-Key: 密钥` | 脚本 / CI 推荐 |
+| 查询参数 | `?key=密钥` | 兼容旧调用；**密钥会进 nginx 访问日志**，建议只用来换 cookie |
+
+同一个 IP 连续 10 次密钥错误后返回 `429` + `Retry-After`，5 分钟窗口；
+中途用对一次密钥即清零，不会误伤正常管理。
+
+列表响应长这样：
+
+```json
+{ "publicBaseUrl": "https://v.example.com",
+  "total": 1234, "count": 200, "offset": 0, "limit": 200,
+  "list": [ /* LinkRecord */ ] }
+```
+
+`limit` 默认 200、上限 1000；`limit=0` 表示不分页、一次性返回全部（脚本 / 迁移用）。
+`q` 在短码、标题、描述、视频地址里做不区分大小写的包含匹配。
+
+> **行为变更（1.1.0）**：`GET /api/links` 默认只返回 200 条。
+> 之前依赖「一次拿全量」的脚本请显式加 `limit=0`。
 
 `LinkRecord` 字段：`code` `title` `desc` `videoUrl` `cover` `mode` `enabled` `createdAt` `updatedAt` `hits` `lastHitAt`。
 
@@ -174,24 +225,86 @@ store: fileStore('./data/links.json')
 // 接你自己的数据库
 store: customStore({
   async load() { return JSON.parse(await redis.get('shortlink:db') || 'null'); },
-  async save(db) { await redis.set('shortlink:db', JSON.stringify(db)); }
+  async save(db) { await redis.set('shortlink:db', JSON.stringify(db)); },
+
+  // 可选：实现了它，访问计数就不再跟着定义一起重写
+  counters: {
+    async load() { ... },                     // → { counts, seq }
+    async applyIncrements(items) { ... },     // 高频增量，建议 INCRBY
+    async saveSnapshot(counts, seq) { ... }   // 低频全量快照
+  }
 })
 ```
 
 只要 `load()` 返回 `{ version, links }` 结构、`save(db)` 落盘即可。
 `load()` 返回 `null` 也没关系，会自动初始化为空库。
 
+### 为什么计数要单独存
+
+短链定义几乎不变，访问计数每时每刻都在变。1.1.x 把两者塞在同一份 JSON 里，
+于是**一次扫码就会让整份文档变脏**，默认 5 秒落盘一次——2 万条短链就是每 5 秒重写 6 MB。
+
+1.2.0 把两者拆开，各有各的节奏：
+
+| | 内容 | 写入时机 | 成本 |
+|---|---|---|---|
+| `links.json` | 短链定义 | 只在增 / 删 / 改时 | 与访问量无关 |
+| `links.hits.log` | 计数增量，一行一次扫码 | 默认每 1 秒追加一批 | 约 26 字节 / 次扫码，**与短链总数无关** |
+| `links.stats.json` | 计数快照 | 默认每 5 分钟压实一次 | 与「被扫过的短链条数」成正比 |
+
+实测（2 万条短链、1 万次扫码）：定义文件被重写 **0 次**，磁盘总写入从约 122 MB
+降到约 257 KB。最坏情况（2 万条全被扫过）快照约 1.7 MB、每 5 分钟压实一次，
+对比原先每 5 秒重写 6.09 MB，仍是两个数量级的差距。
+
+`seq` 是全局单调递增的命中序号：快照记下已并入的 `appliedSeq`，加载时只回放比它大的日志行。
+所以「清空日志」这一步崩在哪都不会重复计数或丢计数——`kill -9` 最多丢最后一次追加
+（默认 1 秒）以内的扫码量，正常 `SIGTERM` 退出则一点都不丢。
+
+不需要扫码统计就设 `trackHits: false`：完全不写计数，零额外 I/O。
+
+### 自定义存储的两档
+
+| 你实现的方法 | 计数模式 | 一次 hits+1 的代价 |
+|---|---|---|
+| 只有 `load` / `save` | `inline` | 整个文档变脏，会被重写（1.1.x 行为） |
+| 再加 `counters` | `separate` | 只往增量后端写一条，定义文档不动 |
+
+不用为了升级而改存储：没实现 `counters` 的老适配器照常工作，行为与 1.1.x 一致。
+
 ---
 
 ## 命令行
 
 ```bash
-oss-shortlink              # 读 config.json 启动服务
-oss-shortlink-qr           # 为全部启用中的短链生成二维码
+oss-shortlink init                    # 生成 config.json（adminKey 随机）
+oss-shortlink                         # 读 ./config.json 启动服务
+oss-shortlink --config ./conf/a.json  # 指定配置文件
+oss-shortlink --data ./data/links.json
+oss-shortlink --help                  # 用法 / 选项 / 环境变量
+oss-shortlink --version
+
+oss-shortlink-qr                      # 为全部启用中的短链生成二维码
 oss-shortlink-qr Ab3xK9 --size 900 --out ./qr
+oss-shortlink-qr --help
 ```
 
-也可以直接 `npm start` / `npm run qr`。
+两个命令的配置与数据路径都相对当前工作目录，互不影响，
+所以可以在同一个仓库里用 `--config` 切换线上/预发两套配置。
+
+也可以直接 `npm start` / `npm run qr`：它们以**仓库根目录**为工作目录，
+所以在克隆下来的仓库里用正合适，装成依赖之后请直接用 `oss-shortlink` 命令。
+
+### 环境变量
+
+命令行与配置文件都认这几个（环境变量覆盖配置文件）：
+
+| 变量 | 作用 |
+|---|---|
+| `CONFIG_FILE` / `DATA_FILE` | 同 `--config` / `--data` |
+| `PORT` / `HOST` | 监听地址 |
+| `PUBLIC_BASE_URL` | 公网前缀 |
+| `ADMIN_KEY` | 管理密钥 |
+| `STREAM_MODE` | `redirect` 或 `proxy`；非法值会被忽略并保留配置文件里的原值 |
 
 ---
 
@@ -310,7 +423,7 @@ server.listen(3000);
 ## 测试
 
 ```bash
-npm test              # SDK 接口层 + HTTP 端点层，共 132 项断言
+npm test              # SDK 接口层 + HTTP 端点层，共 134 项断言
 npm run test:sdk      # 只跑接口层，不起服务
 npm run test:http     # 只跑端点层
 ```
@@ -327,16 +440,18 @@ oss-shortlink/
 │   ├── index.js         SDK 主入口
 │   ├── server.js        createShortlink 组装
 │   ├── router.js        路由与 HTTP 处理
-│   ├── links.js         短链管理器
-│   ├── store.js         存储适配器
+│   ├── links.js         短链管理器（定义 + 创建顺序索引）
+│   ├── counters.js      访问计数管理器（内存 + 增量日志 + 压实）
+│   ├── store.js         存储适配器与计数器后端
 │   ├── config.js        配置规整
 │   ├── render.js        模板渲染
 │   ├── codes.js         短码生成
 │   └── oss.js           OSS 签名
 ├── views/               播放页 / 管理台 / 404
 ├── bin/
-│   ├── cli.js           命令行启动
-│   └── gen-qrcode.js    批量生成二维码
+│   ├── cli.js           命令行启动 / init
+│   ├── gen-qrcode.js    批量生成二维码
+│   └── paths.js         命令行公用的参数与路径解析
 ├── examples/minimal-demo.js
 ├── test/                自检用例
 ├── index.d.ts           类型定义
@@ -370,7 +485,19 @@ ffmpeg -i in.mp4 -c copy -movflags +faststart out.mp4
 或自己写一个中间件统计 `req.headers`。
 
 **必须用 Redis 或数据库吗？**
-不必。默认的文件存储够单机用到几十万条。
+不必，1.2.0 之后文件存储的伸缩性好了很多。现在还剩两个成本项，都在「定义规模」上，
+与访问量无关：
+
+1. **定义文件仍然是全量重写**，但只在增删改短链时发生，扫码不再触发。
+2. **压实计数快照是 O(被扫过的短链条数)**，默认 5 分钟一次。
+3. **`GET /api/links` 带 `q` 搜索时要遍历全部记录**（不带搜索词的分页走创建顺序索引，
+   代价只和本页条数有关）。
+
+实测参考（2 万条短链）：定义 6.09 MB；1 万次扫码不改定义文件、只写 ~257 KB 日志；
+最坏情况快照 1.7 MB / 5 分钟。取流本身是 302，不碰存储，延迟在 2 ms 量级。
+
+也就是说：**几十万条、几百万次扫码，文件存储也撑得住**；真正需要 `customStore()`
+接 Redis / MySQL 的场景是「多实例共享同一份数据」，而不是单机容量。
 
 ---
 

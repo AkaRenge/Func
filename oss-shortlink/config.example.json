@@ -7,9 +7,16 @@
   "brand": "你的品牌名",
   "footerText": "",
   "streamMode": "redirect",
+
+  "flushIntervalMs": 5000,
+
+  "trackHits": true,
+  "hitAppendIntervalMs": 1000,
+  "hitCompactIntervalMs": 300000,
+  "hitJournalMaxBytes": 4194304,
+
   "oss": {
     "signedRead": false,
-    "endpoint": "oss-cn-hangzhou.aliyuncs.com",
     "bucket": "your-bucket-name",
     "accessKeyId": "",
     "accessKeySecret": "",

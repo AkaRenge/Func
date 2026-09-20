@@ -67,8 +67,16 @@ async function main() {
     r = await fetch(BASE + '/admin?key=bad');
     h.check('管理台错误密钥返回 401', r.status === 401, 'HTTP ' + r.status);
 
-    r = await fetch(BASE + '/admin?key=' + KEY);
-    h.check('管理台可正常打开', r.status === 200 && (await r.text()).indexOf('短链管理台') >= 0);
+    r = await fetch(BASE + '/admin?key=' + KEY, { redirect: 'manual' });
+    const setCookie = r.headers.get('set-cookie') || '';
+    h.check('管理台用 query 密钥换 cookie 后跳转，把密钥从地址里摘掉',
+      r.status === 302 && r.headers.get('location') === '/admin', 'HTTP ' + r.status);
+    h.check('会话 cookie 带 HttpOnly + SameSite=Strict',
+      /HttpOnly/i.test(setCookie) && /SameSite=Strict/i.test(setCookie), setCookie);
+
+    r = await fetch(BASE + '/admin', { headers: { Cookie: setCookie.split(';')[0] } });
+    h.check('管理台可正常打开',
+      r.status === 200 && (await r.text()).indexOf('短链管理台') >= 0, 'HTTP ' + r.status);
 
     // ---------------------------------------------------------- 创建
     h.section('创建与校验');

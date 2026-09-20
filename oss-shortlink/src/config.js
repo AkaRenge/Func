@@ -7,6 +7,10 @@ const PLACEHOLDER_KEY = 'CHANGE-ME-TO-A-LONG-RANDOM-STRING';
 const DEFAULT_PORT = 3000;
 const DEFAULT_CODE_LENGTH = 6;
 const DEFAULT_SIGN_TTL = 300;
+const STREAM_MODES = ['redirect', 'proxy'];
+const DEFAULT_HIT_APPEND_MS = 1000;            // 计数增量多久写一次日志
+const DEFAULT_HIT_COMPACT_MS = 300000;         // 计数多久压实一次全量快照
+const DEFAULT_HIT_JOURNAL_MAX = 4 * 1024 * 1024;
 
 function readJsonFile(file) {
   const raw = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '').trim();
@@ -32,11 +36,19 @@ function toInt(value, fallback, min, max) {
   return Math.min(Math.max(n, min), max);
 }
 
+function isValidStreamMode(value) {
+  return STREAM_MODES.indexOf(String(value)) >= 0;
+}
+
+/** 取流模式只有两个合法值，非法值一律回落到 fallback。 */
+function normalizeStreamMode(value, fallback) {
+  return isValidStreamMode(value) ? String(value) : fallback;
+}
+
 function normalizeOss(input) {
   const o = Object.assign({}, input || {});
   return {
     signedRead: !!o.signedRead,
-    endpoint: String(o.endpoint || ''),
     bucket: String(o.bucket || ''),
     accessKeyId: String(o.accessKeyId || ''),
     accessKeySecret: String(o.accessKeySecret || ''),
@@ -60,10 +72,15 @@ function normalize(input) {
     codeLength: toInt(raw.codeLength, DEFAULT_CODE_LENGTH, 4, 16),
     brand: String(raw.brand || ''),
     footerText: String(raw.footerText || ''),
-    streamMode: raw.streamMode === 'proxy' ? 'proxy' : 'redirect',
+    streamMode: normalizeStreamMode(raw.streamMode, 'redirect'),
     viewDir: raw.viewDir || path.join(__dirname, '..', 'views'),
     logRequests: raw.logRequests !== false,
     flushIntervalMs: toInt(raw.flushIntervalMs, 5000, 0, 600000),
+    // 访问计数与短链定义分开落盘，所以它有自己的一套节奏：
+    trackHits: raw.trackHits !== false,
+    hitAppendIntervalMs: toInt(raw.hitAppendIntervalMs, DEFAULT_HIT_APPEND_MS, 0, 600000),
+    hitCompactIntervalMs: toInt(raw.hitCompactIntervalMs, DEFAULT_HIT_COMPACT_MS, 0, 86400000),
+    hitJournalMaxBytes: toInt(raw.hitJournalMaxBytes, DEFAULT_HIT_JOURNAL_MAX, 0, 1 << 30),
     oss: normalizeOss(raw.oss)
   };
 }
@@ -74,13 +91,40 @@ function applyEnv(cfg, env) {
   if (e.HOST) cfg.host = String(e.HOST);
   if (e.ADMIN_KEY) cfg.adminKey = String(e.ADMIN_KEY);
   if (e.PUBLIC_BASE_URL) cfg.publicBaseUrl = String(e.PUBLIC_BASE_URL).replace(/\/+$/, '');
+  // 非法取值保留配置文件里的原值，而不是悄悄改成 redirect
+  if (e.STREAM_MODE) cfg.streamMode = normalizeStreamMode(e.STREAM_MODE, cfg.streamMode);
   return cfg;
 }
 
-/** 从磁盘读配置（config.json 优先，回退 config.example.json），再用环境变量覆盖。 */
+/**
+ * 从一个明确的文件路径读配置。
+ * 找不到就报 CONFIG_NOT_FOUND，不做「回退到同目录 config.example.json」这种猜测——
+ * 那会让用户以为自己改的配置生效了，其实跑的是示例文件。
+ */
+function loadFromFile(file, env) {
+  const abs = path.resolve(file);
+  if (!fs.existsSync(abs)) {
+    const e = new Error('找不到配置文件：' + abs);
+    e.code = 'CONFIG_NOT_FOUND';
+    throw e;
+  }
+  const cfg = normalize(readJsonFile(abs));
+  applyEnv(cfg, env || {});
+  cfg.__source = abs;
+  return cfg;
+}
+
+/**
+ * 兼容旧行为：给一个目录，自动找 config.json / config.example.json。
+ * @deprecated 新代码请用 loadFromFile() 明确指定文件，避免猜错文件。
+ */
 function loadFromDisk(rootDir, env) {
   const file = findConfigFile(rootDir);
-  if (!file) throw new Error('找不到 config.json 或 config.example.json，请先创建配置文件');
+  if (!file) {
+    const e = new Error('找不到 config.json 或 config.example.json，请先创建配置文件');
+    e.code = 'CONFIG_NOT_FOUND';
+    throw e;
+  }
   const cfg = normalize(readJsonFile(file));
   applyEnv(cfg, env || {});
   cfg.__source = path.basename(file);
@@ -94,12 +138,16 @@ function hasUsableAdminKey(cfg) {
 module.exports = {
   normalize: normalize,
   normalizeOss: normalizeOss,
+  normalizeStreamMode: normalizeStreamMode,
+  isValidStreamMode: isValidStreamMode,
+  loadFromFile: loadFromFile,
   loadFromDisk: loadFromDisk,
   readJsonFile: readJsonFile,
   findConfigFile: findConfigFile,
   applyEnv: applyEnv,
   hasUsableAdminKey: hasUsableAdminKey,
   PLACEHOLDER_KEY: PLACEHOLDER_KEY,
+  STREAM_MODES: STREAM_MODES,
   DEFAULT_PORT: DEFAULT_PORT,
   DEFAULT_CODE_LENGTH: DEFAULT_CODE_LENGTH
 };
