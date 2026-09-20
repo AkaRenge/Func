@@ -18,9 +18,10 @@
   "author": "arcueid",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/AkaRenge/Func.git"
+    "url": "git+https://github.com/AkaRenge/Func.git",
+    "directory": "oss-shortlink"
   },
-  "homepage": "https://github.com/AkaRenge/Func#readme",
+  "homepage": "https://github.com/AkaRenge/Func/tree/main/oss-shortlink#readme",
   "bugs": {
     "url": "https://github.com/AkaRenge/Func/issues"
   },
