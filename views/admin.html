@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<title>短链管理台</title>
+<style>
+:root{--bg:#0e1116;--card:#161a21;--line:#242a34;--fg:#e9ecf2;--muted:#98a2b3;--accent:#4d9dff;--ok:#3ecf8e;--bad:#f09595;}
+@media (prefers-color-scheme:light){:root{--bg:#f4f6f9;--card:#fff;--line:#e4e8ee;--fg:#12161c;--muted:#667085;--accent:#1c6fdc;--ok:#0f8a5f;--bad:#c0392b;}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;font-size:14px;line-height:1.6}
+.wrap{max-width:1080px;margin:0 auto;padding:28px 20px 60px}
+h1{font-size:19px;font-weight:600;margin:0 0 4px}
+.sub{color:var(--muted);font-size:13px;margin:0 0 22px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:18px}
+.card h2{font-size:15px;font-weight:600;margin:0 0 14px}
+label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px}
+input,select{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);font-family:inherit;font-size:13px}
+input:focus,select:focus{outline:none;border-color:var(--accent)}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+.grid .full{grid-column:1/-1}
+@media(max-width:640px){.grid{grid-template-columns:1fr}}
+button{font-family:inherit;font-size:13px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);padding:8px 15px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.primary:hover{opacity:.9}
+button.mini{padding:4px 10px;font-size:12px}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px;min-width:820px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{color:var(--muted);font-weight:500;font-size:12px;white-space:nowrap}
+td code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px}
+.url{color:var(--muted);max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block;vertical-align:middle}
+.tag{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11.5px;border:1px solid var(--line)}
+.tag.on{color:var(--ok);border-color:var(--ok)}
+.tag.off{color:var(--bad);border-color:var(--bad)}
+.empty{color:var(--muted);text-align:center;padding:30px 0}
+.msg{margin-top:12px;font-size:13px;min-height:20px}
+.msg.ok{color:var(--ok)}
+.msg.bad{color:var(--bad)}
+.share{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;color:var(--accent);cursor:pointer;word-break:break-all}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>短链管理台</h1>
+  <p class="sub" id="baseSub">—</p>
+
+  <div class="card">
+    <h2>新增短链</h2>
+    <div class="grid">
+      <div>
+        <label>视频标题</label>
+        <input id="f-title" placeholder="例如：XX 产品介绍">
+      </div>
+      <div>
+        <label>播放页模式</label>
+        <select id="f-mode">
+          <option value="player">H5 播放页（推荐）</option>
+          <option value="jump">直接跳转视频</option>
+        </select>
+      </div>
+      <div class="full">
+        <label>OSS 视频地址（必填，公共读的完整 URL）</label>
+        <input id="f-video" placeholder="https://你的bucket.oss-cn-xxx.aliyuncs.com/video/xxx.mp4">
+      </div>
+      <div>
+        <label>封面图地址（可空，留空自动取首帧）</label>
+        <input id="f-cover" placeholder="https://.../cover.jpg">
+      </div>
+      <div>
+        <label>自定义短码（可空，留空自动生成）</label>
+        <input id="f-code" placeholder="例如 vip01">
+      </div>
+      <div class="full">
+        <label>描述文字（可空）</label>
+        <input id="f-desc" placeholder="显示在播放页标题下方">
+      </div>
+    </div>
+    <div class="row" style="margin-top:16px">
+      <button class="primary" id="btn-add">生成短链</button>
+      <button id="btn-reload">刷新列表</button>
+    </div>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="card">
+    <h2>已生成的短链</h2>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr>
+            <th>短码</th><th>标题</th><th>视频地址</th><th>模式</th>
+            <th>状态</th><th>扫码量</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody id="rows"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  var key = new URLSearchParams(location.search).get('key') || '';
+  var msg = document.getElementById('msg');
+  var rows = document.getElementById('rows');
+
+  function say(text, ok) {
+    msg.textContent = text || '';
+    msg.className = 'msg ' + (ok ? 'ok' : 'bad');
+  }
+  function api(method, path, body) {
+    return fetch(path + (path.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(key), {
+      method: method,
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined
+    }).then(function (r) {
+      return r.json().then(function (j) {
+        if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+        return j;
+      });
+    });
+  }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function load() {
+    api('GET', '/api/links').then(function (j) {
+      document.getElementById('baseSub').textContent = '公网前缀：' + j.publicBaseUrl + '　共 ' + j.list.length + ' 条';
+      if (!j.list.length) {
+        rows.innerHTML = '<tr><td colspan="7" class="empty">还没有短链，上面新建一条吧</td></tr>';
+        return;
+      }
+      rows.innerHTML = j.list.map(function (l) {
+        var share = j.publicBaseUrl + '/v/' + l.code;
+        return '<tr>' +
+          '<td><code>' + esc(l.code) + '</code></td>' +
+          '<td>' + esc(l.title || '—') + '</td>' +
+          '<td><span class="url" title="' + esc(l.videoUrl) + '">' + esc(l.videoUrl) + '</span></td>' +
+          '<td>' + (l.mode === 'jump' ? '直跳' : '播放页') + '</td>' +
+          '<td><span class="tag ' + (l.enabled ? 'on' : 'off') + '">' + (l.enabled ? '启用' : '停用') + '</span></td>' +
+          '<td>' + (l.hits || 0) + '</td>' +
+          '<td><div class="row">' +
+            '<button class="mini" data-copy="' + esc(share) + '">复制链接</button>' +
+            '<button class="mini" data-toggle="' + esc(l.code) + '" data-on="' + (l.enabled ? '1' : '0') + '">' + (l.enabled ? '停用' : '启用') + '</button>' +
+            '<button class="mini" data-del="' + esc(l.code) + '">删除</button>' +
+          '</div></td>' +
+        '</tr>';
+      }).join('');
+      rows.querySelectorAll('[data-copy]').forEach(function (b) {
+        b.onclick = function () {
+          var t = b.getAttribute('data-copy');
+          if (navigator.clipboard) navigator.clipboard.writeText(t);
+          say('已复制：' + t, true);
+        };
+      });
+      rows.querySelectorAll('[data-toggle]').forEach(function (b) {
+        b.onclick = function () {
+          var code = b.getAttribute('data-toggle');
+          var on = b.getAttribute('data-on') === '1';
+          api('PATCH', '/api/links/' + code, { enabled: !on })
+            .then(function () { say('已' + (on ? '停用' : '启用') + ' ' + code, true); load(); })
+            .catch(function (e) { say(e.message, false); });
+        };
+      });
+      rows.querySelectorAll('[data-del]').forEach(function (b) {
+        b.onclick = function () {
+          var code = b.getAttribute('data-del');
+          if (!confirm('确认删除 ' + code + ' ？删除后该二维码立即失效。')) return;
+          api('DELETE', '/api/links/' + code)
+            .then(function () { say('已删除 ' + code, true); load(); })
+            .catch(function (e) { say(e.message, false); });
+        };
+      });
+    }).catch(function (e) {
+      rows.innerHTML = '<tr><td colspan="7" class="empty">加载失败：' + esc(e.message) + '</td></tr>';
+    });
+  }
+
+  document.getElementById('btn-reload').onclick = load;
+  document.getElementById('btn-add').onclick = function () {
+    var body = {
+      title: document.getElementById('f-title').value.trim(),
+      desc: document.getElementById('f-desc').value.trim(),
+      videoUrl: document.getElementById('f-video').value.trim(),
+      cover: document.getElementById('f-cover').value.trim(),
+      mode: document.getElementById('f-mode').value,
+      code: document.getElementById('f-code').value.trim()
+    };
+    api('POST', '/api/links', body).then(function (j) {
+      say('已生成：' + j.shareUrl, true);
+      ['f-title', 'f-desc', 'f-video', 'f-cover', 'f-code'].forEach(function (id) {
+        document.getElementById(id).value = '';
+      });
+      load();
+    }).catch(function (e) { say(e.message, false); });
+  };
+
+  if (!key) {
+    rows.innerHTML = '<tr><td colspan="7" class="empty">缺少管理密钥，请用 /admin?key=你的密钥 访问</td></tr>';
+    say('需要在网址后面带上 ?key=你的管理密钥', false);
+    return;
+  }
+  load();
+})();
+</script>
+</body>
+</html>

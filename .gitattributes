@@ -1,0 +1,16 @@
+# 统一换行符，避免 Windows / macOS / Linux 协作时把换行差异带进仓库。
+# 特别注意：bin/*.js 带 shebang，一旦变成 CRLF，在 Unix 上会直接执行失败。
+* text=auto eol=lf
+
+# 二进制文件不做任何换行转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.webp binary
+*.mp4 binary
+*.webm binary
+*.zip binary
+*.gz binary
+*.tgz binary

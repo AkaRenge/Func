@@ -1,0 +1,21 @@
+# 依赖
+node_modules/
+
+# 打包产物
+dist/
+*.tgz
+
+# 运行时数据：真实短链记录、二维码产物、私有配置，一概不提交
+data/
+output/
+config.json
+
+# 编辑器与系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 日志与临时验证目录
+*.log
+.pack-verify/

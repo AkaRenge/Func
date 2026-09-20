@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer-when-downgrade">
+<meta name="format-detection" content="telephone=no">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<meta name="theme-color" content="#0e1116">
+<title>{{TITLE}}</title>
+<style>
+:root{
+  --bg:#0e1116;--card:#161a21;--line:#242a34;
+  --fg:#e9ecf2;--muted:#98a2b3;--accent:#4d9dff;
+}
+@media (prefers-color-scheme:light){
+  :root{--bg:#f4f6f9;--card:#fff;--line:#e4e8ee;--fg:#12161c;--muted:#667085;--accent:#1c6fdc;}
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg);color:var(--fg);
+  font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  min-height:100vh;display:flex;justify-content:center;
+  padding:calc(16px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));
+}
+.wrap{width:100%;max-width:720px;margin:0 auto}
+.stage{background:#000;border-radius:14px;overflow:hidden;border:1px solid var(--line);position:relative}
+.stage video{display:block;width:100%;max-height:70vh;background:#000;vertical-align:top}
+.meta{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin-top:12px}
+.meta h1{font-size:17px;font-weight:600;line-height:1.45;margin:0;word-break:break-word}
+.meta .desc{font-size:13px;line-height:1.7;color:var(--muted);margin:8px 0 0;word-break:break-word}
+.foot{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+.brand{display:flex;align-items:center;gap:6px;font-weight:500;color:var(--fg);min-width:0}
+.brand span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--accent);flex:0 0 auto}
+.err{display:none;position:absolute;inset:0;align-items:center;justify-content:center;flex-direction:column;gap:12px;background:rgba(0,0,0,.88);color:#fff;font-size:13px;text-align:center;padding:24px}
+.err.show{display:flex}
+.err button{background:var(--accent);border:0;color:#fff;font-size:13px;padding:9px 20px;border-radius:8px;font-family:inherit}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage">
+    <video id="v" controls playsinline webkit-playsinline x5-playsinline x5-video-player-type="h5-page" preload="metadata" poster="{{COVER}}" src="{{STREAM}}"></video>
+    <div class="err" id="err">
+      <div>视频加载失败，请检查网络后重试</div>
+      <button type="button" onclick="location.reload()">重新加载</button>
+    </div>
+  </div>
+  <div class="meta">
+    <h1>{{TITLE}}</h1>
+    <p class="desc">{{DESC}}</p>
+    <div class="foot">
+      <span class="brand"><span class="dot"></span><span>{{BRAND}}</span></span>
+      <span>{{FOOTER}}</span>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  var v = document.getElementById('v');
+  var box = document.getElementById('err');
+  if (!v || !box) return;
+  v.addEventListener('error', function () { box.classList.add('show'); });
+  v.addEventListener('loadeddata', function () { box.classList.remove('show'); });
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden && !v.paused) { try { v.pause(); } catch (e) {} }
+  });
+})();
+</script>
+</body>
+</html>

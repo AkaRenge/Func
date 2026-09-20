@@ -1,0 +1,69 @@
+{
+  "name": "oss-shortlink",
+  "version": "1.0.1",
+  "description": "把对象存储上的视频包成短链 + 同域 H5 播放页，扫码者全程只看到你自己的域名",
+  "keywords": [
+    "oss",
+    "aliyun",
+    "object-storage",
+    "shortlink",
+    "short-url",
+    "qrcode",
+    "video",
+    "h5",
+    "wechat",
+    "weixin"
+  ],
+  "license": "MIT",
+  "author": "arcueid",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AkaRenge/Func.git"
+  },
+  "homepage": "https://github.com/AkaRenge/Func#readme",
+  "bugs": {
+    "url": "https://github.com/AkaRenge/Func/issues"
+  },
+  "type": "commonjs",
+  "main": "src/index.js",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "require": "./src/index.js",
+      "default": "./src/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "oss-shortlink": "bin/cli.js",
+    "oss-shortlink-qr": "bin/gen-qrcode.js"
+  },
+  "files": [
+    "src/",
+    "views/",
+    "bin/",
+    "examples/",
+    "config.example.json",
+    "index.d.ts",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node bin/cli.js",
+    "demo": "node examples/minimal-demo.js",
+    "test": "node test/sdk.test.js && node test/http.test.js",
+    "test:sdk": "node test/sdk.test.js",
+    "test:http": "node test/http.test.js",
+    "qr": "node bin/gen-qrcode.js",
+    "pack:check": "npm pack --dry-run",
+    "prepublishOnly": "npm test"
+  },
+  "optionalDependencies": {
+    "qrcode": "^1.5.4"
+  }
+}
