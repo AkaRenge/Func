@@ -33,7 +33,7 @@ const USAGE = [
   '    oss-shortlink-qr   批量生成短链二维码 PNG',
   '',
   '  文档',
-  '    https://github.com/AkaRenge/Func#readme',
+  '    ' + (pkg.homepage || 'https://www.npmjs.com/package/' + pkg.name),
   ''
 ].join('\n');
 
